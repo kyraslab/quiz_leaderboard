@@ -46,9 +46,9 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
     'django_redis',
-    # 'caching',  # TEMPORARILY DISABLED FOR PERFORMANCE COMPARISON
     'authentication',
     'api',
+    'caching',
 ]
 
 MIDDLEWARE = [
@@ -92,7 +92,7 @@ DATABASES = {
         'PASSWORD': os.getenv("DB_PASSWORD"),
         'HOST': os.getenv("DB_HOST") if os.getenv("IS_DOCKER") == "True" else 'localhost',
         'PORT': os.getenv("DB_PORT"),
-        'CONN_MAX_AGE': 60,  # Keep connections open for 60 seconds
+        'CONN_MAX_AGE': 600,  # Keep connections open for 10 minutes
     }
 }
 
@@ -139,33 +139,98 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 STATIC_URL = 'static/'
 
-REDIS_HOST = os.getenv("REDIS_HOST", os.getenv("REDIS_HOST") if os.getenv("IS_DOCKER") == "True" else "localhost")
-REDIS_PORT = os.getenv("REDIS_PORT", os.getenv("REDIS_PORT"))
+REDIS_HOST = os.getenv("REDIS_HOST", "redis" if os.getenv("IS_DOCKER") == "True" else "localhost")
+REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 
 CACHES = {
     'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/0',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'CONNECTION_POOL_KWARGS': {
+                'max_connections': 100,
+                'retry_on_timeout': True,
+                'socket_keepalive': True,
+                'socket_keepalive_options': {},
+                'health_check_interval': 30,
+            },
+            'SERIALIZER': 'django_redis.serializers.json.JSONSerializer',
+            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            'IGNORE_EXCEPTIONS': True,
+        },
+        'KEY_PREFIX': 'quiz_app',
+        'TIMEOUT': 600,
+    },
+    'quiz_data': {
         'BACKEND': 'django_redis.cache.RedisCache',
         'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/1',
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             'CONNECTION_POOL_KWARGS': {
-                'max_connections': 20,
+                'max_connections': 100,
+                'retry_on_timeout': True,
+                'socket_keepalive': True,
+                'health_check_interval': 30,
             },
-            'SERIALIZER': 'django_redis.serializers.pickle.PickleSerializer',
+            'SERIALIZER': 'django_redis.serializers.json.JSONSerializer',
+            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            'IGNORE_EXCEPTIONS': True,
         },
-        'KEY_PREFIX': 'quiz_leaderboard',
-        'TIMEOUT': 300,
+        'KEY_PREFIX': 'quiz_data',
+        'TIMEOUT': 1800,
     },
-    'sessions': {
+    'leaderboards': {
         'BACKEND': 'django_redis.cache.RedisCache',
         'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/2',
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             'CONNECTION_POOL_KWARGS': {
-                'max_connections': 10,
+                'max_connections': 100,
+                'retry_on_timeout': True,
+                'socket_keepalive': True,
+                'health_check_interval': 30,
             },
+            'SERIALIZER': 'django_redis.serializers.json.JSONSerializer',
+            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            'IGNORE_EXCEPTIONS': True,
         },
-        'KEY_PREFIX': 'quiz_sessions',
+        'KEY_PREFIX': 'leaderboards',
+        'TIMEOUT': 180,
+    },
+    'user_stats': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/3',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'CONNECTION_POOL_KWARGS': {
+                'max_connections': 10,
+                'retry_on_timeout': True,
+                'socket_keepalive': True,
+                'health_check_interval': 30,
+            },
+            'SERIALIZER': 'django_redis.serializers.json.JSONSerializer',
+            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
+            'IGNORE_EXCEPTIONS': True,
+        },
+        'KEY_PREFIX': 'user_stats',
+        'TIMEOUT': 3600,
+    },
+    'sessions': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': f'redis://{REDIS_HOST}:{REDIS_PORT}/4',
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'CONNECTION_POOL_KWARGS': {
+                'max_connections': 100,
+                'retry_on_timeout': True,
+                'socket_keepalive': True,
+                'health_check_interval': 30,
+            },
+            'SERIALIZER': 'django_redis.serializers.json.JSONSerializer',
+            'IGNORE_EXCEPTIONS': True,
+        },
+        'KEY_PREFIX': 'sessions',
         'TIMEOUT': 1800,
     }
 }

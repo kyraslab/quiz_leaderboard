@@ -1,3 +1,6 @@
+# Multi-environment Docker Compose setup
+
+# Development environment
 services:
   db:
     image: postgres:17
@@ -14,6 +17,22 @@ services:
     networks:
       - backend_net
 
+  redis:
+    image: redis:8
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - backend_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   web:
     build: .
     volumes:
@@ -22,13 +41,36 @@ services:
       - "8000:8000"
     depends_on:
       - db
+      - redis
+    environment:
+      - DJANGO_ENV=development
+      - POPULATE_DATA=true
     env_file:
       - .env
+    entrypoint: ["/docker-entrypoint.sh"]
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
     networks:
       - backend_net
 
+  # Separate service for manual data population
+  data-populator:
+    build: .
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    entrypoint: ["python", "manage.py"]
+    command:
+      ["populate_data", "--users", "10000", "--sessions", "20000", "--clear"]
+    networks:
+      - backend_net
+    profiles:
+      - manual
+
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
   backend_net:

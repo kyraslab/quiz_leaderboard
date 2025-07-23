@@ -1,6 +1,7 @@
 from rest_framework import generics
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
+from rest_framework.pagination import PageNumberPagination
 from django.utils import timezone
 from django.db.models import Sum, Count, Avg
 from .models import Quiz, QuizSession, Bidang
@@ -8,13 +9,30 @@ from .serializers import (
     QuizSerializer, QuizSessionSerializer, QuizSessionCreateSerializer,
     SubjectLeaderboardSerializer, QuizLeaderboardSerializer
 )
+from caching.utils import (
+    invalidate_leaderboard_caches, 
+    invalidate_quiz_leaderboard_cache,
+    invalidate_quiz_leaderboard_by_user_cache,
+    generate_leaderboard_cache_key
+)
+from django.core.cache import cache
+
+class StandardResultsSetPagination(PageNumberPagination):
+    """
+    Standard pagination class for list views.
+    """
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 
 class QuizListView(generics.ListAPIView):
     """
-    Get list of all quizzes
+    Get list of all quizzes with pagination
     """
     queryset = Quiz.objects.all()
     serializer_class = QuizSerializer
+    pagination_class = StandardResultsSetPagination
     
     def get_queryset(self):
         queryset = Quiz.objects.all()
@@ -41,42 +59,45 @@ class QuizDetailView(generics.RetrieveAPIView):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
         response_data = serializer.data
+
+        if not request.user.is_authenticated:
+            return Response(response_data)
         
-        if request.user.is_authenticated:
-            existing_session = QuizSession.objects.filter(quiz=instance, user=request.user).first()
-            
-            now = timezone.now()
-            is_active = instance.start_date <= now <= instance.end_date
-            
-            response_data['can_attempt'] = is_active and existing_session is None
-            response_data['already_attempted'] = existing_session is not None
-            response_data['attempt_details'] = None
-            
-            if existing_session:
-                response_data['attempt_details'] = {
-                    'score': existing_session.score,
-                    'duration': existing_session.duration,
-                    'user_start': existing_session.user_start,
-                    'user_end': existing_session.user_end
-                }
-            
-            if not is_active:
-                if now < instance.start_date:
-                    response_data['status_message'] = 'Quiz has not started yet'
-                else:
-                    response_data['status_message'] = 'Quiz has ended'
-            elif existing_session:
-                response_data['status_message'] = 'You have already attempted this quiz'
+        existing_session = QuizSession.objects.filter(quiz=instance, user=request.user).first()
+        
+        now = timezone.now()
+        is_active = instance.start_date <= now <= instance.end_date
+        
+        response_data['can_attempt'] = is_active and existing_session is None
+        response_data['already_attempted'] = existing_session is not None
+        response_data['attempt_details'] = None
+        
+        if existing_session:
+            response_data['attempt_details'] = {
+                'score': existing_session.score,
+                'duration': existing_session.duration,
+                'user_start': existing_session.user_start,
+                'user_end': existing_session.user_end
+            }
+        
+        if not is_active:
+            if now < instance.start_date:
+                response_data['status_message'] = 'Quiz has not started yet'
             else:
-                response_data['status_message'] = 'You can attempt this quiz'
+                response_data['status_message'] = 'Quiz has ended'
+        elif existing_session:
+            response_data['status_message'] = 'You have already attempted this quiz'
+        else:
+            response_data['status_message'] = 'You can attempt this quiz'
         
         return Response(response_data)
 
 class QuizSessionListCreateView(generics.ListCreateAPIView):
     """
-    Get list of all quiz sessions or create a new one
+    Get list of all quiz sessions or create a new one with pagination
     """
     queryset = QuizSession.objects.all()
+    pagination_class = StandardResultsSetPagination
     
     def get_serializer_class(self):
         if self.request.method == 'POST':
@@ -99,17 +120,25 @@ class QuizSessionListCreateView(generics.ListCreateAPIView):
             queryset = queryset.filter(quiz__bidang=bidang)
         
         return queryset.order_by('-user_end')
+    
+    def perform_create(self, serializer):
+        """
+        Override to invalidate relevant caches when a new quiz session is created
+        """
+        instance = serializer.save()
+        
+        invalidate_leaderboard_caches(instance.quiz.bidang)
+        
+        invalidate_quiz_leaderboard_cache(instance.quiz.id)
+        
+        invalidate_quiz_leaderboard_by_user_cache(instance.quiz.id, instance.user.id)
 
-class QuizSessionDetailView(generics.RetrieveUpdateDestroyAPIView):
+class QuizSessionDetailView(generics.RetrieveAPIView):
     """
-    Get, update or delete a specific quiz session
+    Get a specific quiz session (read-only)
     """
     queryset = QuizSession.objects.select_related('user', 'quiz').all()
-    
-    def get_serializer_class(self):
-        if self.request.method in ['PUT', 'PATCH']:
-            return QuizSessionCreateSerializer
-        return QuizSessionSerializer
+    serializer_class = QuizSessionSerializer
 
 @api_view(['GET'])
 def subject_leaderboard_view(request):
