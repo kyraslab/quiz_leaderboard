@@ -43,7 +43,6 @@ services:
       - db
       - redis
     environment:
-      - DJANGO_ENV=development
       - POPULATE_DATA=true
     env_file:
       - .env
