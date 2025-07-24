@@ -2,7 +2,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from django.db import connection
 from django.db.models import Count, Sum, Avg
-from django.core.cache import cache
+from django.core.cache import caches
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from caching import utils
@@ -10,6 +10,9 @@ from caching import utils
 from .models import Quiz, QuizSession, Bidang
 
 logger = logging.getLogger(__name__)
+
+leaderboard_cache = caches['leaderboards']
+user_stats_cache = caches['user_stats']
 
 
 @api_view(['GET'])
@@ -22,7 +25,7 @@ def optimized_subject_leaderboard_view(request):
     if bidang:
         cache_key = utils.generate_leaderboard_cache_key(bidang)
         
-        cached_data = cache.get(cache_key)
+        cached_data = leaderboard_cache.get(cache_key)
         if cached_data is not None:
             logger.info(f"Cache hit for subject leaderboard: {cache_key}")
             response = Response(cached_data)
@@ -66,7 +69,7 @@ def optimized_subject_leaderboard_view(request):
             'leaderboard': leaderboard_data
         }
         
-        cache.set(cache_key, response_data, 180)
+        leaderboard_cache.set(cache_key, response_data, 180)
         logger.info(f"Cached subject leaderboard: {cache_key}")
         
         return Response(response_data)
@@ -76,7 +79,7 @@ def optimized_subject_leaderboard_view(request):
             bidang_code, bidang_name = bidang_choice
             cache_key = utils.generate_leaderboard_cache_key(bidang_code)
             
-            cached_subject_data = cache.get(cache_key)
+            cached_subject_data = leaderboard_cache.get(cache_key)
             if cached_subject_data is not None:
                 logger.info(f"Cache hit for subject {bidang_code}: {cache_key}")
                 return bidang_code, {
@@ -120,7 +123,7 @@ def optimized_subject_leaderboard_view(request):
                 'total_participants': len(formatted_data),
                 'leaderboard': formatted_data
             }
-            cache.set(cache_key, bidang_cache_data, 180)
+            leaderboard_cache.set(cache_key, bidang_cache_data, 180)
             logger.info(f"Cached subject leaderboard for {bidang_code}: {cache_key}")
             
             return bidang_code, {
@@ -147,7 +150,7 @@ def optimized_quiz_leaderboard_view(request, pk):
     
     cache_key = utils.generate_quiz_leaderboard_cache_key(pk)
     
-    cached_data = cache.get(cache_key)
+    cached_data = leaderboard_cache.get(cache_key)
     if cached_data is not None:
         logger.info(f"Cache hit for quiz leaderboard: {cache_key}")
         response = Response(cached_data)
@@ -170,13 +173,13 @@ def optimized_quiz_leaderboard_view(request, pk):
     for rank, row in enumerate(results, 1):
         leaderboard_data.append({
             'rank': rank,
-            'session_id': row[0],
-            'user_id': row[1],
-            'username': row[2],
-            'score': row[3],
-            'duration': row[4],
-            'user_start': row[5].isoformat() if row[5] else None,
-            'user_end': row[6].isoformat() if row[6] else None,
+            'session_id': row.id,
+            'user_id': row.user.id,
+            'username': row.user.username,
+            'score': row.score,
+            'duration': row.duration,
+            'user_start': row.user_start.isoformat() if row.user_start else None,
+            'user_end': row.user_end.isoformat() if row.user_end else None,
         })
     
     response_data = {
@@ -186,7 +189,7 @@ def optimized_quiz_leaderboard_view(request, pk):
         'leaderboard': leaderboard_data
     }
     
-    cache.set(cache_key, response_data, 180)
+    leaderboard_cache.set(cache_key, response_data, 180)
     logger.info(f"Cached quiz leaderboard: {cache_key}")
     
     response = Response(response_data)
@@ -204,7 +207,7 @@ def optimized_user_quiz_performance_view(request, pk):
     user_id = request.user.id
     cache_key = utils.generate_quiz_leaderboard_by_user_cache_key(pk, user_id)
     
-    cached_data = cache.get(cache_key)
+    cached_data = user_stats_cache.get(cache_key)
     if cached_data is not None:
         logger.info(f"Cache hit for user performance: {cache_key}")
         response = Response(cached_data)
@@ -254,7 +257,7 @@ def optimized_user_quiz_performance_view(request, pk):
         }
     }
     
-    cache.set(cache_key, response_data, 3600)
+    user_stats_cache.set(cache_key, response_data, 3600)
     logger.info(f"Cached user performance: {cache_key}")
     
     response = Response(response_data)

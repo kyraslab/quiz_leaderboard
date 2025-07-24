@@ -13,9 +13,8 @@ from caching.utils import (
     invalidate_leaderboard_caches, 
     invalidate_quiz_leaderboard_cache,
     invalidate_quiz_leaderboard_by_user_cache,
-    generate_leaderboard_cache_key
 )
-from django.core.cache import cache
+from websocket.utils import websocket_notifier
 
 class StandardResultsSetPagination(PageNumberPagination):
     """
@@ -123,15 +122,34 @@ class QuizSessionListCreateView(generics.ListCreateAPIView):
     
     def perform_create(self, serializer):
         """
-        Override to invalidate relevant caches when a new quiz session is created
+        Override to invalidate relevant caches and send WebSocket notifications 
+        when a new quiz session is created
         """
         instance = serializer.save()
         
         invalidate_leaderboard_caches(instance.quiz.bidang)
-        
         invalidate_quiz_leaderboard_cache(instance.quiz.id)
-        
         invalidate_quiz_leaderboard_by_user_cache(instance.quiz.id, instance.user.id)
+        
+        quiz_session_data = {
+            'session_id': instance.id,
+            'user_id': instance.user.id,
+            'quiz_id': instance.quiz.id,
+            'score': instance.score,
+            'timestamp': timezone.now().isoformat()
+        }
+        websocket_notifier.send_quiz_session_uploaded(quiz_session_data)
+
+        timestamp = timezone.now().isoformat()
+        
+        leaderboard_data = {
+            'update_type': 'quiz_session_added',
+            'bidang': instance.quiz.bidang,
+            'quiz_id': instance.quiz.id,
+            'timestamp': timestamp
+        }
+        websocket_notifier.send_leaderboard_updated(leaderboard_data)
+        websocket_notifier.send_quiz_leaderboard_updated(instance.quiz.id, timestamp)
 
 class QuizSessionDetailView(generics.RetrieveAPIView):
     """

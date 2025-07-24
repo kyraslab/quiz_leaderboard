@@ -41,4 +41,3 @@ class QuizSession(models.Model):
             time_diff = self.user_end - self.user_start
             self.duration = int(time_diff.total_seconds())
         super().save(*args, **kwargs)
-        super().save(*args, **kwargs)

@@ -1,8 +1,12 @@
-from django.core.cache import cache
+from django.core.cache import caches
 from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Get specific cache backends
+leaderboard_cache = caches['leaderboards']
+user_stats_cache = caches['user_stats']
 
 def generate_leaderboard_cache_key(bidang: Optional[str] = None) -> str:
     """
@@ -51,7 +55,7 @@ def invalidate_leaderboard_caches(bidang: Optional[str] = None):
     try:
         if bidang:
             cache_key = generate_leaderboard_cache_key(bidang)
-            cache.delete(cache_key)
+            leaderboard_cache.delete(cache_key)
             logger.info(f"Invalidated leaderboard cache for subject: {bidang}")
         else:
             # Invalidate individual subject caches only (no "all subjects" cache)
@@ -59,7 +63,7 @@ def invalidate_leaderboard_caches(bidang: Optional[str] = None):
             
             for bidang_choice in Bidang.choices:
                 subject_key = generate_leaderboard_cache_key(bidang_choice[0])
-                cache.delete(subject_key)
+                leaderboard_cache.delete(subject_key)
             
             logger.info("Invalidated all individual subject leaderboard caches")
             
@@ -76,7 +80,7 @@ def invalidate_quiz_leaderboard_cache(quiz_id: int):
     """
     try:
         cache_key = generate_quiz_leaderboard_cache_key(quiz_id)
-        cache.delete(cache_key)
+        leaderboard_cache.delete(cache_key)
         logger.info(f"Invalidated leaderboard cache for quiz: {quiz_id}")
         
     except Exception as e:
@@ -93,7 +97,7 @@ def invalidate_quiz_leaderboard_by_user_cache(quiz_id: int, user_id: int):
     """
     try:
         cache_key = generate_quiz_leaderboard_by_user_cache_key(quiz_id, user_id)
-        cache.delete(cache_key)
+        user_stats_cache.delete(cache_key)
         logger.info(f"Invalidated user: {user_id}'s performance cache for quiz: {quiz_id}")
 
     except Exception as e:

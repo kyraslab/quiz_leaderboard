@@ -1,8 +1,27 @@
 #!/bin/bash
 
 echo "Waiting for database to be ready..."
-while ! nc -z db 5432; do
-  sleep 1
+until python -c "
+import psycopg2
+import os
+import sys
+try:
+    conn = psycopg2.connect(
+        host=os.getenv('DB_HOST', 'db'),
+        port=os.getenv('DB_PORT', '5432'),
+        user=os.getenv('DB_USER'),
+        password=os.getenv('DB_PASSWORD'),
+        dbname=os.getenv('DB_NAME'),
+        connect_timeout=10
+    )
+    conn.close()
+    print('Database connection successful!')
+except Exception as e:
+    print(f'Database not ready: {e}')
+    sys.exit(1)
+"; do
+  echo "Database not ready, waiting..."
+  sleep 2
 done
 
 echo "Database is ready!"
@@ -15,10 +34,7 @@ python manage.py migrate
 
 if [ "$POPULATE_DATA" = "true" ]; then
   echo "Populating development data..."
-  python manage.py populate_data --clear --users 1000 --sessions 2000
-  
-  echo "Warming up caches..."
-  python manage.py warm_cache --all
+  python manage.py populate_data --clear --users 1000 --sessions 20000
 fi
 
 echo "Starting Django server..."
