@@ -139,8 +139,8 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 STATIC_URL = 'static/'
 
-REDIS_HOST = os.getenv("REDIS_HOST", "redis" if os.getenv("IS_DOCKER") == "True" else "localhost")
-REDIS_PORT = os.getenv("REDIS_PORT", "6379")
+REDIS_HOST = os.getenv("REDIS_HOST") if os.getenv("IS_DOCKER") == "True" else "localhost"
+REDIS_PORT = os.getenv("REDIS_PORT")
 
 CACHES = {
     'default': {
