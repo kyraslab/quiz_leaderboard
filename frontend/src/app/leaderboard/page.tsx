@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Cookies from "js-cookie";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { leaderboardAPI } from "@/lib/api";
 import { SubjectLeaderboardEntry, SubjectLeaderboard } from "@/types";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import { useWebSocket } from "@/contexts/WebSocketContext";
 
 enum BidangEnum {
   AST = "AST",
@@ -37,6 +38,10 @@ function LeaderboardPageContent() {
   const [selectedSubject, setSelectedSubject] = useState<BidangEnum>(
     subjects[0].bidang
   );
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+
+  const { isConnected, lastMessage, showNotification } = useWebSocket();
+  const queryClient = useQueryClient();
 
   const { data: subjectLeaderboard, isLoading: subjectLoading } = useQuery({
     queryKey: ["leaderboard", "subject", selectedSubject],
@@ -46,6 +51,29 @@ function LeaderboardPageContent() {
         .then((res) => res.data),
     enabled: !!selectedSubject,
   });
+
+  // Handle WebSocket messages for auto-refresh
+  useEffect(() => {
+    if (lastMessage) {
+      const shouldRefresh =
+        lastMessage.type === "leaderboard_updated" ||
+        lastMessage.type === "quiz_session_uploaded" ||
+        lastMessage.type === "quiz_leaderboard_updated";
+
+      if (shouldRefresh) {
+        // Invalidate and refetch leaderboard data
+        queryClient.invalidateQueries({
+          queryKey: ["leaderboard", "subject", selectedSubject],
+        });
+        setLastUpdate(new Date());
+
+        console.log(
+          "Leaderboard auto-refreshed due to WebSocket message:",
+          lastMessage.type
+        );
+      }
+    }
+  }, [lastMessage, queryClient, selectedSubject]);
 
   const isLoading = subjectLoading;
   const leaderboardData: SubjectLeaderboard | undefined = subjectLeaderboard;
@@ -98,6 +126,19 @@ function LeaderboardPageContent() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold">Top 20 Leaderboard</h2>
+            <div className="flex items-center space-x-4 text-sm text-gray-600">
+              <div className="flex items-center space-x-2">
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    isConnected ? "bg-green-500" : "bg-red-500"
+                  }`}
+                ></div>
+                <span>{isConnected ? "Live Updates" : "Disconnected"}</span>
+              </div>
+              <div className="text-xs">
+                Last updated: {lastUpdate.toLocaleTimeString()}
+              </div>
+            </div>
           </div>
         </CardHeader>
         <CardBody>

@@ -2,13 +2,16 @@
 
 import { useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWebSocket } from "@/contexts/WebSocketContext";
 
 export default function LogoutPage() {
   const { logout } = useAuth();
+  const { showNotification } = useWebSocket();
 
   useEffect(() => {
+    showNotification("You have been logged out successfully", "info");
     logout();
-  }, [logout]);
+  }, [logout, showNotification]);
 
   return (
     <div className="text-center">

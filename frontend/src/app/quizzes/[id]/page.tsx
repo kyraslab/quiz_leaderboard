@@ -1,14 +1,15 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect, useState } from "react";
 import Cookies from "js-cookie";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { quizAPI, leaderboardAPI } from "@/lib/api";
 import { Card, CardBody, CardHeader } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { Quiz, QuizLeaderboard, UserPerformance } from "@/types";
+import { useWebSocket } from "@/contexts/WebSocketContext";
 
 interface QuizPageProps {
   params: Promise<{
@@ -19,6 +20,11 @@ interface QuizPageProps {
 function QuizPageContent({ params }: QuizPageProps) {
   const resolvedParams = use(params);
   const router = useRouter();
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+
+  const { isConnected, lastMessage, subscribeToQuiz, unsubscribeFromQuiz } =
+    useWebSocket();
+  const queryClient = useQueryClient();
 
   const { data: quiz, isLoading: quizLoading } = useQuery<Quiz>({
     queryKey: ["quiz", resolvedParams.id],
@@ -42,6 +48,46 @@ function QuizPageContent({ params }: QuizPageProps) {
         leaderboardAPI.getUserRank(resolvedParams.id).then((res) => res.data),
       enabled: quiz?.already_attempted || false,
     });
+
+  // Subscribe to quiz-specific updates when component mounts
+  useEffect(() => {
+    if (resolvedParams.id && isConnected) {
+      subscribeToQuiz(resolvedParams.id);
+    }
+
+    return () => {
+      if (resolvedParams.id) {
+        unsubscribeFromQuiz(resolvedParams.id);
+      }
+    };
+  }, [resolvedParams.id, isConnected, subscribeToQuiz, unsubscribeFromQuiz]);
+
+  // Handle WebSocket messages for auto-refresh
+  useEffect(() => {
+    if (lastMessage) {
+      const shouldRefresh =
+        lastMessage.type === "quiz_leaderboard_updated" ||
+        lastMessage.type === "quiz_session_uploaded" ||
+        (lastMessage.type === "leaderboard_updated" &&
+          lastMessage.data?.quiz_id === resolvedParams.id);
+
+      if (shouldRefresh) {
+        // Invalidate and refetch both leaderboard and user performance data
+        queryClient.invalidateQueries({
+          queryKey: ["leaderboard", "quiz", resolvedParams.id],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["userPerformance", "quiz", resolvedParams.id],
+        });
+        setLastUpdate(new Date());
+
+        console.log(
+          "Quiz leaderboard auto-refreshed due to WebSocket message:",
+          lastMessage.type
+        );
+      }
+    }
+  }, [lastMessage, queryClient, resolvedParams.id]);
 
   const isLoading = quizLoading || leaderboardLoading;
 
@@ -134,9 +180,22 @@ function QuizPageContent({ params }: QuizPageProps) {
 
           <Card>
             <CardHeader>
-              <h2 className="text-2xl text-center font-bold">
-                Top 20 Quiz Leaderboard
-              </h2>
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold">Top 20 Quiz Leaderboard</h2>
+                <div className="flex items-center space-x-4 text-sm text-gray-600">
+                  <div className="flex items-center space-x-2">
+                    <div
+                      className={`w-2 h-2 rounded-full ${
+                        isConnected ? "bg-green-500" : "bg-red-500"
+                      }`}
+                    ></div>
+                    <span>{isConnected ? "Live Updates" : "Disconnected"}</span>
+                  </div>
+                  <div className="text-xs">
+                    Last updated: {lastUpdate.toLocaleTimeString()}
+                  </div>
+                </div>
+              </div>
             </CardHeader>
             <CardBody>
               {!leaderboardData || leaderboardData.leaderboard.length === 0 ? (

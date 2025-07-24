@@ -86,3 +86,22 @@ export interface PaginatedResponse<T> {
   previous: string | null;
   results: T[];
 }
+
+// WebSocket Message Types
+export interface WebSocketMessage {
+  type:
+    | "quiz_session_uploaded"
+    | "leaderboard_updated"
+    | "quiz_leaderboard_updated"
+    | "subscription_confirmed"
+    | "unsubscription_confirmed"
+    | "error";
+  data?: any;
+  quiz_id?: string;
+  message?: string;
+}
+
+export interface WebSocketSubscriptionMessage {
+  type: "subscribe_quiz" | "unsubscribe_quiz";
+  quiz_id: string;
+}
