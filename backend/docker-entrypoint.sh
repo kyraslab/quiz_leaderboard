@@ -28,13 +28,25 @@ echo "Database is ready!"
 
 echo "Making migrations..."
 python manage.py makemigrations
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to make migrations"
+  exit 1
+fi
 
 echo "Applying migrations..."
 python manage.py migrate
+if [ $? -ne 0 ]; then
+  echo "Error: Failed to apply migrations"
+  exit 1
+fi
 
 if [ "$POPULATE_DATA" = "true" ]; then
   echo "Populating development data..."
   python manage.py populate_data --clear --users 1000 --sessions 20000
+  if [ $? -ne 0 ]; then
+    echo "Error: Failed to populate data"
+    exit 1
+  fi
 fi
 
 echo "Starting Django server..."

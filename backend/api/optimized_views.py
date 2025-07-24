@@ -1,6 +1,5 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from django.db import connection
 from django.db.models import Count, Sum, Avg
 from django.core.cache import caches
 from rest_framework.response import Response
@@ -31,7 +30,7 @@ def optimized_subject_leaderboard_view(request):
             response = Response(cached_data)
             return response
         
-        results = (
+        results = list(
             QuizSession.objects
             .filter(quiz__bidang=bidang)
             .values('user__id', 'user__username', 'quiz__bidang')
@@ -42,8 +41,8 @@ def optimized_subject_leaderboard_view(request):
                 total_duration=Sum('duration'),
                 average_duration=Avg('duration'),
             )
-            .order_by('-total_score', 'average_duration')
-        )
+            .order_by('-average_score', 'average_duration')
+        )[:20]
         
         leaderboard_data = []
         bidang_name = dict(Bidang.choices).get(bidang, bidang)
@@ -99,7 +98,7 @@ def optimized_subject_leaderboard_view(request):
                     total_duration=Sum('duration'),
                     average_duration=Avg('duration'),
                 )
-                .order_by('-total_score', 'average_duration')
+                .order_by('-average_score', 'average_duration')[:20]
             )
             
             formatted_data = []
@@ -165,8 +164,7 @@ def optimized_quiz_leaderboard_view(request, pk):
         QuizSession.objects
         .filter(quiz_id=pk)
         .select_related('user')
-        .order_by('-score', 'duration')
-        .all()
+        .order_by('-score', 'duration')[:20]
     )
     
     leaderboard_data = []
